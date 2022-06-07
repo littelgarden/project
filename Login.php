@@ -6,99 +6,50 @@ class Login extends MX_Controller {
 
     function __construct() {
         parent::__construct();
-        modules::run('admin/admin_ini/login_ini');
-        $this->load->library('form_validation', 'uploads');
+        $this->load->model("Home_model");
     }
 
     public function index() {
-        if ($this->session->userdata('active_admin_data'))
-            redirect(site_url('admin/admin/index'));
+        if ($this->session->userdata('active_user_id'))
+            redirect(site_url('web/home/index'));
 
-        $prompt = array();
-        if ($this->input->post()) {
-            $input = $this->input->post();
-
-            $this->db->select("users.*");
-            $this->db->Where("users.email", $input['email']);
-            $this->db->Where("users.password", md5($input['password']));
-            $this->db->group_start()
-                    ->where("users.user_type", 2)
-                    ->or_where("users.user_type", 3)
-                    ->group_end();
-            $this->db->where('users.status', 1);
-            $result = $this->db->get('users')->row();
-            
-            if ($result) {
-                $newdata = array(
-                    'active_admin_flag' => True,
-                    'active_admin_id' => $result->id,
-                    'active_admin_data' => $result,
-                    'admin_name' => $result->name,
-                    'admin_email' => $result->email
-                );
-                $this->session->set_userdata($newdata);
-                redirect(site_url('admin/admin/index'));
-            } else {
-                $this->db->Where("email", $input['email']);
-                $result = $this->db->get('users')->row();
-                if ($result) {
-                    if ($result->password != md5($input['password'])) {
-                        $prompt = array(
-                            "type" => "warning",
-                            "message" => "Enter Valid Password..!"
-                        );
-                    } else if ($result->user_type != 2) {
-                        $prompt = array(
-                            "type" => "error",
-                            "message" => "Enter Valid Details..!"
-                        );
-                    } else if ($result->status == 0) {
-                        $prompt = array(
-                            "type" => "warning",
-                            "message" => "Your Account is pending for activation..!"
-                        );
-                    } else if ($result->status == 2) {
-                        $prompt = array(
-                            "type" => "error",
-                            "message" => "Your Account is Blocked..!"
-                        );
-                    } else if ($result->status == 3) {
-                        $prompt = array(
-                            "type" => "error",
-                            "message" => "Your Account is Deleted..!"
-                        );
-                    } else {
-                        $prompt = array(
-                            "type" => "error",
-                            "message" => "Enter Valid Email..!"
-                        );
-                    }
-                } else
-                    $prompt = array(
-                        "type" => "error",
-                        "message" => "Enter Valid Email..!"
-                    );
-            }
+        $input = $this->input->post();
+        if ($input) {
+            $this->Home_model->login($input);
         }
-        //$this->load->view('tutor_panel/login/login');
-        $this->load->view('login/login', array("prompt" => $prompt));
+        $view_data['products'] = $this->Home_model->get_products();
+        $this->load->view('user/login', $view_data);
     }
 
     public function logout() {
         $this->session->sess_destroy();
-        redirect(site_url('admin/login/index'));
+        redirect(site_url('web/home/index'));
     }
 
     public function register() {
         $input = $this->input->post();
         if ($input) {
-            $input['user_type'] = 2;
+            $this->db->where('email', $input['email']);
+            $result = $this->db->get('users')->row();
+            if ($result) {
+                echo json_encode(array("data" => 2, "target" => "email", "message" => "Email Already Exist"));
+                die;
+            }
+            $input['user_type'] = 1;
             $input['created'] = time();
-            $input['status'] = 3;
-            $this->db->insert('users', $input);
-            redirect("admin/login");
+            $input['status'] = 1;
+            $input['password'] = md5($input['password']);
+            if ($input['password'] != md5($input['c_password'])) {
+                echo json_encode(array("data" => 1, "message" => "Password Does Not Match"));
+                die;
+            } else {
+                unset($input['c_password']);
+                $this->db->insert('users', $input);
+                echo json_encode(array("data" => 1, "message" => "Registration Successful. Now you can login"));
+                die;
+            }
         }
-        $this->load->view('login/register');
+        $this->load->view('user/register');
     }
 
     function request_reset_password() {
@@ -119,6 +70,30 @@ class Login extends MX_Controller {
                 echo json_encode(array("data" => 1));
             }
         }
+    }
+
+    function change_password() {
+        if ($input = $this->input->post()) {
+            if ($input['password'] != $input['c_password'])
+                echo json_encode(array("data" => 2, "message" => "Password Does Not Match"));
+            else {
+                $this->db->where("id", $this->session->userdata('active_user_id'));
+                $this->db->update("users", array("password" => md5($input['password'])));
+                echo json_encode(array("data" => 1, "message" => "Password Changed Successfully"));
+            }die;
+        }
+        $this->load->view('user/change_password', array());
+    }
+
+    function profile() {
+        if ($input = $this->input->post()) {
+            $this->db->where("id", $this->session->userdata('active_user_id'));
+            $this->db->update("users", $input);
+            echo json_encode(array("data" => 1, "message" => "Profile Update Successfully"));
+            die;
+        }
+        $view_data['profile'] = $this->session->userdata('active_user_data');
+        $this->load->view('user/profile', $view_data);
     }
 
 }
